@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+.ipynb_checkpoints/
+.DS_Store
+
+# 流水线产物：保留报告(REPORT.md)与指标(json)作为真实数据证据，忽略大体积明细 CSV
+research/**/*.csv

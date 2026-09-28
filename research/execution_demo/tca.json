@@ -1,0 +1,153 @@
+{
+  "meta": {
+    "pipeline": "execution_demo",
+    "generated_at": "2026-09-28 11:39:40",
+    "source": "ashare/sh600519.csv 真实日线（最近 60 根 bar）",
+    "symbol": "sh600519",
+    "side": "BUY",
+    "parent_qty": 7200.0,
+    "n_bars": 60,
+    "window_start": 44,
+    "window_end": 59,
+    "n_window": 15,
+    "window_start_date": "2026-09-02",
+    "window_end_date": "2026-09-22",
+    "window_volume": 360786.0,
+    "benchmark_vwap": 1285.0572155516013,
+    "parent_participation": 0.019956428464519133,
+    "n_slices": 15,
+    "lot_size": 100,
+    "latency": 1,
+    "participation_rate": 0.1,
+    "slippage_bps": 5.0,
+    "commission_rate": 0.0003,
+    "commission_min": 5.0,
+    "market_ref": "close",
+    "impact_coef_bps": 10.0,
+    "decision_price": 1299.56,
+    "arrival_price": 1302.8,
+    "algos": [
+      "twap",
+      "vwap"
+    ],
+    "versions": {
+      "kairos_execution": "0.1.0"
+    }
+  },
+  "tca": {
+    "index": [
+      "下单量",
+      "成交量",
+      "成交率",
+      "子单数",
+      "成交笔数",
+      "决策价",
+      "到达价",
+      "成交均价",
+      "滑点(bps)",
+      "延迟成本(bps)",
+      "相对市场VWAP价差(bps)",
+      "市场冲击估计(bps)",
+      "实现差额(bps)",
+      "实现差额(货币)",
+      "佣金",
+      "成交金额"
+    ],
+    "columns": [
+      "twap",
+      "vwap"
+    ],
+    "data": {
+      "twap": [
+        7200.0,
+        7200.0,
+        1.0,
+        15.0,
+        15.0,
+        1299.56,
+        1302.8,
+        1281.491675625,
+        -163.5579089269265,
+        24.93151528209555,
+        -27.74615700726485,
+        1.4126722360306774,
+        -136.0758785459115,
+        -127323.91348064982,
+        2768.02201935,
+        9226740.0645
+      ],
+      "vwap": [
+        7200.0,
+        7200.0,
+        1.0,
+        15.0,
+        15.0,
+        1299.56,
+        1302.8,
+        1282.3015247916665,
+        -157.34168873452182,
+        24.93151528209555,
+        -21.44410946521156,
+        1.4126722360306774,
+        -129.84229085918307,
+        -121491.25020645115,
+        2769.7712935499994,
+        9232570.9785
+      ]
+    }
+  },
+  "runs": [
+    {
+      "algo": "twap",
+      "n_children": 15,
+      "n_fills": 15,
+      "filled_qty": 7200.0,
+      "unfilled_qty": 0.0,
+      "notional": 9226740.0645,
+      "tca": {
+        "symbol": "sh600519",
+        "side": "Side.BUY",
+        "ordered_qty": 7200.0,
+        "filled_qty": 7200.0,
+        "fill_ratio": 1.0,
+        "arrival_price": 1302.8,
+        "decision_price": 1299.56,
+        "average_fill_price": 1281.491675625,
+        "slippage_bps": -163.5579089269265,
+        "delay_cost_bps": 24.93151528209555,
+        "realized_spread_bps": -27.74615700726485,
+        "market_impact_bps": 1.4126722360306774,
+        "commission": 2768.02201935,
+        "implementation_shortfall": -127323.91348064982,
+        "implementation_shortfall_bps": -136.0758785459115,
+        "num_fills": 15
+      }
+    },
+    {
+      "algo": "vwap",
+      "n_children": 15,
+      "n_fills": 15,
+      "filled_qty": 7200.0,
+      "unfilled_qty": 0.0,
+      "notional": 9232570.9785,
+      "tca": {
+        "symbol": "sh600519",
+        "side": "Side.BUY",
+        "ordered_qty": 7200.0,
+        "filled_qty": 7200.0,
+        "fill_ratio": 1.0,
+        "arrival_price": 1302.8,
+        "decision_price": 1299.56,
+        "average_fill_price": 1282.3015247916665,
+        "slippage_bps": -157.34168873452182,
+        "delay_cost_bps": 24.93151528209555,
+        "realized_spread_bps": -21.44410946521156,
+        "market_impact_bps": 1.4126722360306774,
+        "commission": 2769.7712935499994,
+        "implementation_shortfall": -121491.25020645115,
+        "implementation_shortfall_bps": -129.84229085918307,
+        "num_fills": 15
+      }
+    }
+  ]
+}

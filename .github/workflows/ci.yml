@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install deps
+        run: |
+          python -m pip install -U pip
+          pip install numpy pandas scipy matplotlib pytest
+      - name: Install package (pulls the 7 sibling kairos packages from git)
+        run: pip install -e .
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Smoke-run the three pipelines on offline synthetic data
+        run: |
+          python examples/run_e2e_equity.py --synthetic --quiet --out-dir /tmp/lab/equity
+          python examples/run_e2e_multi_asset.py --synthetic --quiet --out-dir /tmp/lab/multi
+          python examples/run_execution_demo.py --synthetic --quiet --out-dir /tmp/lab/exec
+          test -s /tmp/lab/equity/REPORT.md
+          test -s /tmp/lab/multi/REPORT.md
+          test -s /tmp/lab/exec/REPORT.md

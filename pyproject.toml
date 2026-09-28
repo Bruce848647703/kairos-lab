@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kairos-lab"
+version = "0.1.0"
+description = "Kairos Lab —— Kairos 量化套件的 capstone：用真实数据把 data/factor/portfolio/backtest/risk/execution/ml 串成端到端研究流水线（因子研究 → 组合优化 → 回测 → 风险 → 执行 TCA）"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Bruce848647703" }]
+keywords = ["quant", "research-lab", "end-to-end", "pipeline", "factor", "portfolio", "backtest", "risk", "execution", "tca", "capstone"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Intended Audience :: Science/Research",
+]
+
+# 必需依赖只有 numpy/pandas；7 个兄弟包用 git+https 声明，
+# 外部用户 `pip install .` 即可自动拉取（本地并排 checkout 时由
+# kairos_lab/_bootstrap.py 自动加入 sys.path，无需安装）。
+dependencies = [
+    "numpy>=1.21",
+    "pandas>=1.3",
+    "kairos-data @ git+https://github.com/Bruce848647703/kairos-data@main",
+    "kairos-factor @ git+https://github.com/Bruce848647703/kairos-factor@main",
+    "kairos-portfolio @ git+https://github.com/Bruce848647703/kairos-portfolio@main",
+    "kairos-backtest @ git+https://github.com/Bruce848647703/kairos-backtest@main",
+    "kairos-risk @ git+https://github.com/Bruce848647703/kairos-risk@main",
+    "kairos-execution @ git+https://github.com/Bruce848647703/kairos-execution@main",
+    "kairos-ml @ git+https://github.com/Bruce848647703/kairos-ml@main",
+]
+
+[project.optional-dependencies]
+# long-only / bounds 约束优化（min_variance / mean_variance / max_sharpe 的 SLSQP 路径）
+scipy = ["scipy>=1.7"]
+# 示例可选绘图（测试不依赖）
+plot = ["matplotlib>=3.4"]
+dev = ["pytest>=7.0", "scipy>=1.7", "matplotlib>=3.4"]
+
+[tool.setuptools]
+packages = ["kairos_lab", "kairos_lab.pipelines"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
