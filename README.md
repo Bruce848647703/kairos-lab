@@ -1,5 +1,7 @@
 # Kairos Lab
 
+[![CI](https://github.com/Bruce848647703/kairos-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/Bruce848647703/kairos-lab/actions/workflows/ci.yml)
+
 > Kairos 量化系列的 **capstone** —— 一个**自研、轻量**的端到端研究实验室：用**真实行情数据**把 `kairos_data` / `kairos_factor` / `kairos_portfolio` / `kairos_backtest` / `kairos_risk` / `kairos_execution` / `kairos_ml` 七个兄弟包串成可复现的研究流水线，并自动产出中文研究报告。
 
 本仓库**不重新实现任何算法**。它的价值在于「串联」与「交付」：把散落在各个包里的能力
