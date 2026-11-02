@@ -1,8 +1,9 @@
 """本地开发引导：让未 ``pip install`` 的兄弟包也能被 import。
 
-Kairos Lab 是 Kairos 量化套件的 capstone，运行时需要 7 个兄弟包
+Kairos Lab 是 Kairos 量化套件的 capstone，运行时需要 10 个兄弟包
 （``kairos_data`` / ``kairos_factor`` / ``kairos_portfolio`` / ``kairos_backtest`` /
-``kairos_risk`` / ``kairos_execution`` / ``kairos_ml``）。它们既可以通过
+``kairos_risk`` / ``kairos_execution`` / ``kairos_ml`` / ``kairos_vol`` /
+``kairos_rates`` / ``kairos_microstructure``）。它们既可以通过
 ``pyproject.toml`` 里声明的 ``git+https`` 依赖正常安装，也可能只是与本仓库
 并排 checkout 在同一父目录下（开发场景）。本模块负责兼容这两种情况：
 
@@ -39,6 +40,9 @@ SIBLINGS: Dict[str, str] = {
     "kairos_risk": "kairos-risk",
     "kairos_execution": "kairos-execution",
     "kairos_ml": "kairos-ml",
+    "kairos_vol": "kairos-vol",
+    "kairos_rates": "kairos-rates",
+    "kairos_microstructure": "kairos-microstructure",
 }
 
 #: 覆盖兄弟仓库父目录的环境变量名

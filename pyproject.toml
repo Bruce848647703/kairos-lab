@@ -33,6 +33,9 @@ dependencies = [
     "kairos-risk @ git+https://github.com/Bruce848647703/kairos-risk@main",
     "kairos-execution @ git+https://github.com/Bruce848647703/kairos-execution@main",
     "kairos-ml @ git+https://github.com/Bruce848647703/kairos-ml@main",
+    "kairos-vol @ git+https://github.com/Bruce848647703/kairos-vol@main",
+    "kairos-rates @ git+https://github.com/Bruce848647703/kairos-rates@main",
+    "kairos-microstructure @ git+https://github.com/Bruce848647703/kairos-microstructure@main",
 ]
 
 [project.optional-dependencies]

@@ -76,7 +76,7 @@
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e .                  # 自动安装 7 个 kairos-* 包（git+https@main）
+pip install -e .                  # 自动安装 10 个 kairos-* 包（git+https@main）
 pip install -e ".[dev]"           # 额外装 pytest / scipy / matplotlib
 pip install -e ".[scipy]"         # 只需要 long-only 约束优化（SLSQP）时
 ```
@@ -117,8 +117,12 @@ python examples/run_e2e_multi_asset.py --target-vol 0.03        # 叠加目标�
 python examples/run_execution_demo.py
 python examples/run_execution_demo.py --symbol sz000858 --side sell --algos twap vwap is iceberg
 
-make test        # 28 个离线测试，数秒全绿
-make demo        # 依次跑三条流水线
+# ④ 研究方向看板：真实数据 → 波动率曲面 / 收益率曲线 / 订单簿（自包含 HTML）
+python examples/run_dashboard.py --symbol sh600519
+python examples/run_dashboard.py --synthetic --out-dir /tmp/lab/dashboard   # 离线自检
+
+make test        # 32 个离线测试，数秒全绿
+make demo        # 依次跑四条流水线
 ```
 
 也可以在代码里直接调用：
@@ -209,6 +213,24 @@ res["artifacts"]["report_md"]         # research/e2e_equity/REPORT.md
 > 延迟成本（+24.93bp）三者相同 —— 它来自决策价到到达价的漂移，与算法无关，
 > 这正是执行风险的主要来源。
 
+### ④ 研究方向看板（贵州茅台 sh600519，2,608 根真实日线）
+
+![研究方向看板](docs/dashboard.png)
+
+用**真实日线**驱动三块内容，产物是单文件 `index.html`（内联 SVG，可离线打开）：
+
+| 面板 | 来源 | 结果 |
+|---|---|---|
+| 波动率曲面 | `kairos-vol`，ATM 锚定真实已实现波动率 | ATM 35.6% → 25.1%，报价区间内无套利 |
+| 收益率曲线 | `kairos-rates` bootstrap + Nelson-Siegel | 10Y 2.89%，NS RMSE 0.00bp |
+| 订单簿与执行成本 | `kairos-microstructure` 用真实 ADV/波动率校准 | 2% ADV 走簿 2.26bp；AC 成本 0.55bp / 风险 86.95bp |
+
+校准参数（全部来自这一份 CSV）：年化波动 26.4%、ADV 31,382 股、成交额 2.42 亿、
+Amihud 6.29e-11、Roll 价差 23.4bp、Kyle λ 1.09e-2、临时冲击 η 0.0263、永久冲击 γ 0.0109。
+
+> 诚实边界：日线 OHLCV 没有逐笔方向，Kyle λ 用带符号成交量代理，η 由平方根律在
+> 参考参与率上锚定。看板把假设写在页面上，不假装是结构估计。
+
 ## 项目结构
 
 ```
@@ -222,8 +244,9 @@ kairos-lab/
       e2e_equity.py        run_equity_pipeline()      数据→因子→组合→回测→风险
       e2e_multi_asset.py   run_multi_asset_pipeline() 风险平价全天候→回测→风险
       execution_demo.py    run_execution_demo()       切片→撮合→TCA
-  examples/                三个可直接运行的入口脚本（argparse，产物写 research/<name>/）
-  tests/                   28 个离线测试（含防未来函数与跨包一致性验证）
+      dashboard.py         run_dashboard()            真实数据→曲面/曲线/订单簿看板
+  examples/                四个可直接运行的入口脚本（argparse，产物写 research/<name>/）
+  tests/                   32 个离线测试（含防未来函数、跨包一致性与看板产物验证）
   research/                运行产物（已 gitignore）
 ```
 
@@ -276,7 +299,7 @@ make test          # 或 python -m pytest -q
 
 28 个测试全部离线（固定 seed 的合成面板，6×300 与 5×420），数秒跑完，覆盖：
 
-- 三条流水线的返回结构、指标有限性、产物落盘、报告小节齐全；
+- 四条流水线的返回结构、指标有限性、产物落盘、报告小节齐全；
 - `metrics.json` / `tca.json` 是**严格合法** JSON；
 - 权重合法性（每行和 ≤ 1、非负、风险平价满仓、成分风险占比和为 1）；
 - **防未来函数**：价格截断到 t 重算，因子权重 / 优化权重 / 回测收益必须与全样本逐位一致；

@@ -3,6 +3,7 @@
 - :func:`run_equity_pipeline`      A 股：数据 → 因子 → 组合 → 回测 → 风险
 - :func:`run_multi_asset_pipeline` 跨资产 ETF：风险平价全天候 → 回测 → 风险
 - :func:`run_execution_demo`       执行：父单 → TWAP/VWAP 切片 → 模拟撮合 → TCA
+- :func:`run_dashboard`            衍生品/利率/微观结构：真实数据 → 曲面/曲线/订单簿看板
 
 导入本包会连带 import 所需的兄弟包（通过 :mod:`kairos_lab._bootstrap` 定位），
 缺少任一兄弟包时给出带安装指引的中文 ``ImportError``。
@@ -40,6 +41,8 @@ from .execution_demo import (
     tca_frame,
     to_bar_list,
 )
+from .dashboard import run_dashboard
+from .dashboard import summarize as summarize_dashboard
 from .execution_demo import summarize as summarize_execution
 
 __all__ = [
@@ -55,4 +58,6 @@ __all__ = [
     # execution
     "run_execution_demo", "summarize_execution", "execute_once", "to_bar_list",
     "make_algo", "tca_frame",
+    # dashboard
+    "run_dashboard", "summarize_dashboard",
 ]
