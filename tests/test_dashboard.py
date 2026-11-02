@@ -82,6 +82,7 @@ def test_multi_symbol_and_interactive_controls(tmp_path):
     assert 'id="sym"' in text and 'id="q"' in text and 'id="lam"' in text
     assert 'data-symbol="AAA"' in text and 'data-symbol="BBB"' in text
     assert "<script>" in text
+    assert "多标的对比" in text
 
     with open(result["metrics_json"], encoding="utf-8") as fh:
         loaded = json.load(fh)

@@ -225,7 +225,7 @@ res["artifacts"]["report_md"]         # research/e2e_equity/REPORT.md
 | 收益率曲线 | `kairos-rates` bootstrap + Nelson-Siegel | 10Y 2.89%，NS RMSE 0.00bp |
 | 订单簿与执行成本 | `kairos-microstructure` 用真实 ADV/波动率校准 | 2% ADV 走簿 2.26bp；AC 成本 0.55bp / 风险 86.95bp |
 
-看板是**可交互**的：顶部可切换标的（支持多标的对比）、拖动「参与率」与「风险厌恶 λ」，
+看板是**可交互**的：顶部可切换标的，多标的时还有一张**并排对比表**（点击行即可切换）；拖动「参与率」与「风险厌恶 λ」，
 KPI、成本表与 Almgren-Chriss 轨迹会实时更新；全部是内联 JS + SVG，无外部依赖、可离线打开。
 
 校准参数（全部来自这一份 CSV）：年化波动 26.4%、ADV 31,382 股、成交额 2.42 亿、

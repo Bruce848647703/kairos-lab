@@ -359,6 +359,25 @@ def _render_html(panels: Sequence[Dict[str, Any]]) -> str:
         f'{" selected" if i == 0 else ""}>{html.escape(p["symbol"])}</option>'
         for i, p in enumerate(panels))
 
+    compare_html = ""
+    if len(panels) > 1:
+        rows = "".join(
+            f'<tr data-sym="{html.escape(p["symbol"])}">'
+            f'<td>{html.escape(p["symbol"])}</td>'
+            f'<td>{p["metrics"]["sigma_annual"]:.2%}</td>'
+            f'<td>{p["metrics"]["adv"]:,.0f}</td>'
+            f'<td>{p["metrics"]["spread_ohlc_bps"]:.1f}</td>'
+            f'<td>{p["metrics"]["walk_shortfall_bps"]:.2f}</td>'
+            f'<td>{p["metrics"]["ac"][2]["cost_bps"]:.2f}</td>'
+            f'<td>{p["metrics"]["ac"][2]["std_bps"]:.1f}</td></tr>'
+            for p in panels)
+        compare_html = f"""
+  <div class="compare"><h2>多标的对比（点击行切换）</h2>
+    <table><thead><tr><th>标的</th><th>年化波动</th><th>ADV</th>
+    <th>价差(bp)</th><th>走簿冲击(bp)</th><th>AC成本(bp,λ=25)</th><th>AC风险(bp)</th>
+    </tr></thead><tbody>{rows}</tbody></table>
+  </div>"""
+
     sections = []
     for i, panel in enumerate(panels):
         m = panel["metrics"]
@@ -465,6 +484,10 @@ th,td {{ text-align:right; padding:5px 4px; border-bottom:1px solid #1a2029; }}
 th {{ color:var(--muted); font-weight:400; }}
 td:first-child,th:first-child {{ text-align:left; }}
 tr.active td {{ background:rgba(76,141,255,.14); }}
+.compare {{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:14px; }}
+.compare h2 {{ margin:0 0 10px; font-size:13px; color:var(--muted); font-weight:600; }}
+.compare tr[data-sym] {{ cursor:pointer; }}
+.compare tr[data-sym]:hover td {{ background:rgba(76,141,255,.08); }}
 .kpi {{ display:flex; gap:24px; flex-wrap:wrap; }}
 .kpi div {{ display:flex; flex-direction:column; }}
 .kpi b {{ font-size:18px; }}
@@ -482,7 +505,7 @@ tr.active td {{ background:rgba(76,141,255,.14); }}
     <input id="lam" type="range" min="0" max="400" step="5" value="25">
     <b id="lam-label">25</b></label>
 </header>
-<main>{''.join(sections)}</main>
+<main>{compare_html}{''.join(sections)}</main>
 <script>
 const DATA = {json.dumps(payload, ensure_ascii=False)};
 const $ = (s) => document.querySelector(s);
@@ -527,6 +550,12 @@ function switchSymbol() {{
   applyRisk();
 }}
 
+document.querySelectorAll('tr[data-sym]').forEach((tr) => {{
+  tr.addEventListener('click', () => {{
+    $('#sym').value = tr.dataset.sym;
+    switchSymbol();
+  }});
+}});
 $('#sym').addEventListener('change', switchSymbol);
 $('#q').addEventListener('input', applyParticipation);
 $('#lam').addEventListener('input', applyRisk);
