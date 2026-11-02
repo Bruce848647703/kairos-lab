@@ -169,54 +169,82 @@ def _table(rows: Sequence[Sequence[Any]], headers: Sequence[str]) -> str:
 # --------------------------------------------------------------------------- #
 # 主流程
 # --------------------------------------------------------------------------- #
-def run_dashboard(
-    *,
-    symbol: str = "sh600519",
-    data_path: Optional[str] = None,
-    out_dir: Optional[str] = None,
-    risk_aversion: float = 25.0,
-    quiet: bool = False,
-) -> Dict[str, Any]:
-    """跑完整看板，返回产物路径与关键指标。"""
-    path = data_path or default_data_path(symbol)
-    prices, volumes = km.load_price_volume(path)
-    calib = km.calibrate(prices, volumes)
+LAMBDA_GRID = (0.0, 10.0, 25.0, 100.0, 400.0)
+
+
+def _load_calibration(path: str):
+    """优先用 OHLC（更好的波动/价差估计），列不全时退回收盘价+成交量。"""
+    try:
+        data = km.load_ohlcv(path)
+        return data["close"], data["volume"], km.calibrate(
+            data["close"], data["volume"], high=data["high"], low=data["low"])
+    except (ValueError, KeyError):
+        prices, volumes = km.load_price_volume(path)
+        return prices, volumes, km.calibrate(prices, volumes)
+
+
+def _svg_ac(schedules: Sequence[Any], width: int = 560, height: int = 260) -> str:
+    left, right, top, bottom = 52, 16, 16, 30
+    times = np.linspace(0.0, 1.0, len(schedules[0].holdings))
+    parts = []
+    for idx, sched in enumerate(schedules):
+        ratios = sched.holdings / sched.shares * 100.0
+        pts = [(_scale(t, 0, 1, left, width - right),
+                _scale(r, 0, 100, height - bottom, top)) for t, r in zip(times, ratios)]
+        parts.append(f'<g class="ac" data-lam="{sched.risk_aversion:g}" '
+                     f'style="display:none">{_polyline(pts, "#5dade2", 2.2)}</g>')
+    for frac in (0.0, 0.5, 1.0):
+        y = top + frac * (height - top - bottom)
+        parts.append(f'<text x="{left - 6}" y="{y + 4:.1f}" fill="#8b93a1" '
+                     f'font-size="10" text-anchor="end">{100 - frac * 100:.0f}%</text>')
+        parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{width - right}" '
+                     f'y2="{y:.1f}" stroke="#2b3542" stroke-width="1"/>')
+    for frac in (0.0, 0.5, 1.0):
+        x = left + frac * (width - left - right)
+        parts.append(f'<text x="{x:.1f}" y="{height - 10}" fill="#8b93a1" '
+                     f'font-size="10" text-anchor="middle">{frac:.1f}</text>')
+    return (f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}">'
+            + "".join(parts) + "</svg>")
+
+
+def _symbol_payload(symbol: str, data_path: str) -> Dict[str, Any]:
+    prices, volumes, calib = _load_calibration(data_path)
     last_price = float(prices[-1])
 
-    # 1) 波动率曲面（真实已实现波动率作为 ATM 锚）
     atm = min(max(calib.sigma, 0.05), 1.2)
     quotes = kv.synthetic_ssvi_quotes(
         forward=last_price, maturities=MATURITIES,
         atm_vol=tuple(min(a * atm, 1.5) for a in ATM_MULTIPLIERS),
         k_min=-0.5, k_max=0.5, n_k=31)
     surface = kv.VolSurface.fit(quotes)
-    # 只在报价覆盖的 k 区间（±0.6）内做无套利体检；区间外是 SVI 外推，不作承诺
     vol_report = kv.surface_report(surface, k_grid=np.linspace(-0.6, 0.6, 241))
 
-    # 2) 收益率曲线
-    curve = kr.bootstrap(kr.synthetic_quotes(
-        kr.synthetic_curve(**CURVE_SHAPE)))
+    curve = kr.bootstrap(kr.synthetic_quotes(kr.synthetic_curve(**CURVE_SHAPE)))
     ns, ns_rmse = kr.fit_nelson_siegel(
         np.array(curve.pillars), np.asarray(curve.zero(curve.pillars)))
 
-    # 3) 订单簿 + 执行成本
-    # 每档约 0.5% ADV、档间距 1bp，接近真实盘口的量级
     level_size = max(calib.adv * 0.005, 1.0)
     sample_qty = max(calib.adv * 0.02, 100.0)
     tick = max(round(last_price * 1e-4, 2), 0.01)
     book = km.build_book(mid=last_price, tick=tick, levels=20, level_size=level_size)
     walk = km.walk_book(book, "buy", sample_qty)
-    costs = km.cost_curve(calib, horizon=1.0)
-    ac = km.almgren_chriss(sample_qty, 1.0, 10, sigma=calib.sigma_daily,
-                           eta=calib.eta, gamma=calib.gamma, adv=calib.adv,
-                           risk_aversion=risk_aversion, price=last_price)
 
+    schedules = [
+        km.almgren_chriss(sample_qty, 1.0, 10, sigma=calib.sigma_daily,
+                          eta=calib.eta, gamma=calib.gamma, adv=calib.adv,
+                          risk_aversion=lam, price=last_price)
+        for lam in LAMBDA_GRID
+    ]
     metrics = {
         "symbol": symbol,
-        "data_path": os.path.abspath(path),
+        "data_path": os.path.abspath(data_path),
         "n_obs": calib.n_obs,
         "last_price": last_price,
         "sigma_annual": calib.sigma,
+        "sigma_daily": calib.sigma_daily,
+        "sigma_intraday": calib.sigma_intraday,
+        "spread_ohlc_bps": calib.spread_ohlc_bps,
+        "spread_source": calib.spread_source,
         "adv": calib.adv,
         "dollar_adv": calib.dollar_adv,
         "amihud": calib.amihud,
@@ -232,160 +260,279 @@ def run_dashboard(
         "ns_rmse_bp": ns_rmse * 1e4,
         "sample_qty": sample_qty,
         "walk_shortfall_bps": walk["shortfall_bps"],
-        "ac_cost_bps": ac.cost_bps,
-        "ac_std_bps": ac.std_bps,
-        "cost_curve": costs,
+        "cost_curve": km.cost_curve(calib, horizon=1.0),
+        "ac": [{"lam": sch.risk_aversion, "cost_bps": sch.cost_bps,
+                "std_bps": sch.std_bps} for sch in schedules],
+    }
+    return {
+        "symbol": symbol,
+        "metrics": metrics,
+        "smiles_svg": _svg_smiles(surface),
+        "curve_svg": _svg_curve(curve),
+        "book_svg": _svg_book(book),
+        "ac_svg": _svg_ac(schedules),
     }
 
+
+def run_dashboard(
+    *,
+    symbols: Optional[Sequence[str]] = None,
+    symbol: str = "sh600519",
+    data_path: Optional[str] = None,
+    data_paths: Optional[Dict[str, str]] = None,
+    out_dir: Optional[str] = None,
+    quiet: bool = False,
+) -> Dict[str, Any]:
+    """跑看板（支持多标的对比），返回产物路径与指标。"""
+    names = list(symbols) if symbols else [symbol]
+    paths = dict(data_paths or {})
+    panels = []
+    for name in names:
+        path = paths.get(name) or (data_path if len(names) == 1 else None) \
+            or default_data_path(name)
+        panels.append(_symbol_payload(name, path))
+
     out_dir = rp.ensure_dir(out_dir or os.path.join("research", "dashboard"))
-    html_text = _render_html(metrics, surface, curve, book)
-    html_path = rp.write_text(os.path.join(out_dir, "index.html"), html_text)
-    md_path = rp.write_text(os.path.join(out_dir, "REPORT.md"), _render_markdown(metrics))
-    json_path = rp.write_json(os.path.join(out_dir, "metrics.json"), metrics)
+    html_path = rp.write_text(os.path.join(out_dir, "index.html"), _render_html(panels))
+    md_path = rp.write_text(os.path.join(out_dir, "REPORT.md"),
+                            _render_markdown(panels))
+    json_path = rp.write_json(os.path.join(out_dir, "metrics.json"),
+                              {p["symbol"]: p["metrics"] for p in panels})
 
     if not quiet:
-        print(f"[dashboard] {symbol}: {len(prices)} 行真实数据")
-        print(f"  波动率曲面: ATM {metrics['surface_atm'][0]:.2%} → "
-              f"{metrics['surface_atm'][-1]:.2%}  无套利={metrics['surface_arbitrage_free']}")
-        print(f"  收益率曲线: 10Y {float(curve.zero(10.0)):.2%}  NS RMSE={ns_rmse*1e4:.2f}bp")
-        print(f"  执行成本:   {sample_qty:,.0f} 股走簿 {walk['shortfall_bps']:.2f}bp  "
-              f"AC 成本 {ac.cost_bps:.2f}bp / 风险 {ac.std_bps:.2f}bp")
+        for panel in panels:
+            m = panel["metrics"]
+            print(f"[dashboard] {m['symbol']}: {m['n_obs']} 行 · "
+                  f"σ={m['sigma_annual']:.1%} · ADV={m['adv']:,.0f} · "
+                  f"走簿 {m['walk_shortfall_bps']:.2f}bp")
         print(f"  产物: {html_path}")
 
     return {"html": html_path, "report": md_path, "metrics_json": json_path,
-            "metrics": metrics}
+            "panels": panels, "metrics": panels[0]["metrics"]}
 
 
 def summarize(result: Dict[str, Any]) -> str:
     m = result["metrics"]
     return (f"{m['symbol']} · {m['n_obs']} 行 · ATM {m['surface_atm'][0]:.1%} · "
             f"ADV {m['adv']:,.0f} · 走簿 {m['walk_shortfall_bps']:.2f}bp · "
-            f"AC {m['ac_cost_bps']:.2f}bp")
+            f"AC {m['ac'][2]['cost_bps']:.2f}bp")
 
 
-def _render_markdown(m: Dict[str, Any]) -> str:
-    lines = [
-        f"# 研究看板 · {m['symbol']}", "",
-        f"- 数据：`{m['data_path']}`（{m['n_obs']} 个观测，最新价 {m['last_price']:,.2f}）",
-        f"- 年化波动：{m['sigma_annual']:.2%}；ADV：{m['adv']:,.0f} 股；"
-        f"成交额：{m['dollar_adv']:,.0f}",
-        f"- Amihud：{m['amihud']:.3e}；Roll 价差：{m['roll_spread_bps']:.2f}bp；"
-        f"Kyle λ：{m['kyle_lambda']:.3e}",
-        "",
-        "## 波动率曲面", "",
-        f"无套利体检：{'通过' if m['surface_arbitrage_free'] else '未通过'}", "",
-        "| 期限 | ATM |", "|---:|---:|",
-    ]
-    for t, v in zip(MATURITIES, m["surface_atm"]):
-        lines.append(f"| {t:g} | {v:.2%} |")
-    lines += ["", "## 收益率曲线", "", "| 期限 | 零息利率 |", "|---:|---:|"]
-    for t, v in zip(m["curve_pillars"], m["curve_zero"]):
-        lines.append(f"| {t:g} | {v:.2%} |")
-    lines += ["", f"Nelson-Siegel RMSE：{m['ns_rmse_bp']:.2f}bp", "",
-              "## 执行成本", "",
-              f"{m['sample_qty']:,.0f} 股走簿冲击：{m['walk_shortfall_bps']:.2f}bp；"
-              f"Almgren-Chriss 成本 {m['ac_cost_bps']:.2f}bp / 风险 {m['ac_std_bps']:.2f}bp", "",
-              "| 参与率 | 股数 | 成本(bp) | 风险(bp) |", "|---:|---:|---:|---:|"]
-    for row in m["cost_curve"]:
-        lines.append(f"| {row['participation']:.0%} | {row['shares']:,.0f} | "
-                     f"{row['cost_bps']:.2f} | {row['risk_bps']:.2f} |")
-    lines.append("")
+def _render_markdown(panels: Sequence[Dict[str, Any]]) -> str:
+    lines = ["# 研究方向看板", ""]
+    for panel in panels:
+        m = panel["metrics"]
+        lines += [
+            f"## {m['symbol']}", "",
+            f"- 数据：`{m['data_path']}`（{m['n_obs']} 行，最新价 {m['last_price']:,.2f}）",
+            f"- 年化波动：{m['sigma_annual']:.2%}；日频：{m['sigma_daily']:.2%}；"
+            f"ADV：{m['adv']:,.0f}；成交额：{m['dollar_adv']:,.0f}",
+            f"- Amihud：{m['amihud']:.3e}；Roll {m['roll_spread_bps']:.2f}bp；"
+            f"OHLC 价差 {m['spread_ohlc_bps']:.2f}bp（{m['spread_source']}）；"
+            f"Kyle λ {m['kyle_lambda']:.3e}",
+            "", "| 期限 | ATM |", "|---:|---:|",
+        ]
+        for t, v in zip(MATURITIES, m["surface_atm"]):
+            lines.append(f"| {t:g} | {v:.2%} |")
+        lines += ["", "| 参与率 | 股数 | 成本(bp) | 风险(bp) |", "|---:|---:|---:|---:|"]
+        for row in m["cost_curve"]:
+            lines.append(f"| {row['participation']:.0%} | {row['shares']:,.0f} | "
+                         f"{row['cost_bps']:.2f} | {row['risk_bps']:.2f} |")
+        lines.append("")
     return "\n".join(lines)
 
 
-def _render_html(m: Dict[str, Any], surface: Any, curve: Any, book: Any) -> str:
-    calib_rows = [
-        ("年化波动 σ", f"{m['sigma_annual']:.2%}"),
-        ("ADV（中位）", f"{m['adv']:,.0f}"),
-        ("成交额（中位）", f"{m['dollar_adv']:,.0f}"),
-        ("Amihud", f"{m['amihud']:.3e}"),
-        ("Roll 价差", f"{m['roll_spread_bps']:.2f}bp"),
-        ("Kyle λ", f"{m['kyle_lambda']:.3e}"),
-        ("临时冲击 η", f"{m['eta']:.4f}"),
-        ("永久冲击 γ", f"{m['gamma']:.4f}"),
-    ]
-    cost_rows = [(f"{r['participation']:.0%}", f"{r['shares']:,.0f}",
-                  f"{r['cost_bps']:.2f}", f"{r['risk_bps']:.2f}") for r in m["cost_curve"]]
-    curve_rows = [(f"{t:g}", f"{v:.2%}") for t, v in zip(m["curve_pillars"], m["curve_zero"])]
+def _render_html(panels: Sequence[Dict[str, Any]]) -> str:
+    import json
+
+    payload = {
+        p["symbol"]: {
+            "eta": p["metrics"]["eta"],
+            "gamma": p["metrics"]["gamma"],
+            "sigma_daily": p["metrics"]["sigma_daily"],
+            "adv": p["metrics"]["adv"],
+            "ac": p["metrics"]["ac"],
+        } for p in panels
+    }
+    options = "".join(
+        f'<option value="{html.escape(p["symbol"])}"'
+        f'{" selected" if i == 0 else ""}>{html.escape(p["symbol"])}</option>'
+        for i, p in enumerate(panels))
+
+    sections = []
+    for i, panel in enumerate(panels):
+        m = panel["metrics"]
+        calib_rows = [
+            ("年化波动 σ", f"{m['sigma_annual']:.2%}"),
+            ("日频波动", f"{m['sigma_daily']:.2%}"),
+            ("OHLC 日频波动", "—" if m["sigma_intraday"] is None else f"{m['sigma_intraday']:.2%}"),
+            ("ADV（中位）", f"{m['adv']:,.0f}"),
+            ("成交额（中位）", f"{m['dollar_adv']:,.0f}"),
+            ("Amihud", f"{m['amihud']:.3e}"),
+            ("Roll 价差", f"{m['roll_spread_bps']:.2f}bp"),
+            ("OHLC 价差", f"{m['spread_ohlc_bps']:.2f}bp（{m['spread_source']}）"),
+            ("Kyle λ", f"{m['kyle_lambda']:.3e}"),
+            ("临时冲击 η", f"{m['eta']:.4f}"),
+            ("永久冲击 γ", f"{m['gamma']:.4f}"),
+        ]
+        cost_rows = "".join(
+            f'<tr data-q="{r["participation"]:.4f}"><td>{r["participation"]:.0%}</td>'
+            f'<td>{r["shares"]:,.0f}</td><td class="c-cost">{r["cost_bps"]:.2f}</td>'
+            f'<td class="c-risk">{r["risk_bps"]:.2f}</td></tr>'
+            for r in m["cost_curve"])
+        curve_rows = "".join(
+            f"<tr><td>{t:g}</td><td>{v:.2%}</td></tr>"
+            for t, v in zip(m["curve_pillars"], m["curve_zero"]))
+        sections.append(f"""
+  <section class="panel" data-symbol="{html.escape(m['symbol'])}"
+           style="display:{'block' if i == 0 else 'none'}">
+    <div class="wide"><h2>关键指标</h2>
+      <div class="kpi">
+        <div><span>年化波动</span><b>{m['sigma_annual']:.2%}</b></div>
+        <div><span>ADV</span><b>{m['adv']:,.0f}</b></div>
+        <div><span>走簿冲击</span><b>{m['walk_shortfall_bps']:.2f}bp</b></div>
+        <div><span>AC 成本</span><b id="kpi-cost">{m['ac'][2]['cost_bps']:.2f}bp</b></div>
+        <div><span>AC 风险</span><b id="kpi-risk">{m['ac'][2]['std_bps']:.2f}bp</b></div>
+      </div>
+    </div>
+
+    <div class="wide"><h2>波动率曲面（ATM 锚定真实已实现波动率）</h2>
+      {panel['smiles_svg']}
+      <p class="note">无套利体检：
+        <span class="{'ok' if m['surface_arbitrage_free'] else 'bad'}">
+        {'通过' if m['surface_arbitrage_free'] else '未通过'}</span>
+        （k∈[-0.6, 0.6] 报价区间内；区间外为 SVI 外推）</p>
+    </div>
+
+    <div class="wide"><h2>收益率曲线</h2>
+      {panel['curve_svg']}
+      <p class="note">NS RMSE {m['ns_rmse_bp']:.2f}bp · β0={m['ns_params']['beta0']:.4f}
+        β1={m['ns_params']['beta1']:+.4f}</p>
+      <table><thead><tr><th>期限(年)</th><th>零息利率</th></tr></thead>
+      <tbody>{curve_rows}</tbody></table>
+    </div>
+
+    <div class="wide"><h2>订单簿与执行成本</h2>
+      {panel['book_svg']}
+      <p class="note">样本订单 {m['sample_qty']:,.0f} 股（约 2% ADV）走簿
+        {m['walk_shortfall_bps']:.2f}bp</p>
+      <table><thead><tr><th>参与率</th><th>股数</th><th>成本(bp)</th><th>风险(bp)</th>
+      </tr></thead><tbody>{cost_rows}</tbody></table>
+    </div>
+
+    <div class="wide"><h2>Almgren-Chriss 轨迹（拖动风险厌恶）</h2>
+      {panel['ac_svg']}
+      <p class="note">曲线为剩余仓位（%）；λ=0 即 TWAP。</p>
+    </div>
+
+    <div><h2>校准参数</h2>
+      {_table(calib_rows, ['指标', '数值'])}
+    </div>
+    <div><h2>数据</h2>
+      <p class="note">{html.escape(m['data_path'])}</p>
+      <p class="note">日线 OHLCV 没有逐笔方向：Kyle λ 用带符号成交量代理；
+      η 由平方根律锚定；γ 取 Kyle λ。详见 kairos-microstructure/calibrate.py。</p>
+    </div>
+    <div><h2>如何复现</h2>
+      <p class="note">python examples/run_dashboard.py --symbols sh600519,sh600036</p>
+      <p class="note">全部数字来自本地 CSV，不联网；HTML 内联 SVG，可离线打开。</p>
+    </div>
+  </section>""")
+
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kairos Lab · 研究看板 · {html.escape(m['symbol'])}</title>
+<title>Kairos Lab · 研究看板</title>
 <style>
 :root {{ --bg:#0b0e11; --panel:#12161c; --line:#222a35; --text:#e8eaed;
         --muted:#8b93a1; --gold:#f0b90b; --accent:#4c8dff; }}
 * {{ box-sizing:border-box; }}
 body {{ margin:0; background:var(--bg); color:var(--text);
        font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; }}
-header {{ padding:18px 24px; border-bottom:1px solid var(--line); display:flex;
-          align-items:baseline; gap:16px; }}
+header {{ padding:16px 24px; border-bottom:1px solid var(--line); display:flex;
+          align-items:center; gap:18px; flex-wrap:wrap; }}
 header h1 {{ margin:0; font-size:18px; }}
-header span {{ color:var(--muted); font-size:12px; }}
-main {{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; padding:16px 24px; }}
-section {{ background:var(--panel); border:1px solid var(--line); border-radius:10px;
-          padding:14px 16px; }}
-section h2 {{ margin:0 0 10px; font-size:13px; color:var(--muted); font-weight:600; }}
-.wide {{ grid-column:1 / -1; }}
+header .ctl {{ display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; }}
+header input[type=range] {{ width:150px; accent-color:var(--accent); }}
+header select {{ background:var(--panel); color:var(--text); border:1px solid var(--line);
+                 border-radius:6px; padding:4px 8px; }}
+main {{ padding:16px 24px; }}
+section.panel > div {{ background:var(--panel); border:1px solid var(--line);
+       border-radius:10px; padding:14px 16px; margin-bottom:14px; }}
+section.panel h2 {{ margin:0 0 10px; font-size:13px; color:var(--muted); font-weight:600; }}
 table {{ width:100%; border-collapse:collapse; font-size:12px; }}
 th,td {{ text-align:right; padding:5px 4px; border-bottom:1px solid #1a2029; }}
 th {{ color:var(--muted); font-weight:400; }}
 td:first-child,th:first-child {{ text-align:left; }}
-.kpi {{ display:flex; gap:22px; flex-wrap:wrap; }}
+tr.active td {{ background:rgba(76,141,255,.14); }}
+.kpi {{ display:flex; gap:24px; flex-wrap:wrap; }}
 .kpi div {{ display:flex; flex-direction:column; }}
 .kpi b {{ font-size:18px; }}
 .kpi span {{ color:var(--muted); font-size:11px; }}
 .note {{ color:var(--muted); font-size:11px; margin-top:8px; }}
 .ok {{ color:#2ebd85; }} .bad {{ color:#f6465d; }}
-@media (max-width:1100px) {{ main {{ grid-template-columns:1fr; }} }}
 </style></head><body>
-<header><h1>◆ KAIROS LAB · 研究看板</h1>
-<span>{html.escape(m['symbol'])} · {m['n_obs']} 行真实日线 · 最新价 {m['last_price']:,.2f}</span></header>
-<main>
-  <section class="wide"><h2>关键指标</h2>
-    <div class="kpi">
-      <div><span>年化波动</span><b>{m['sigma_annual']:.2%}</b></div>
-      <div><span>ADV</span><b>{m['adv']:,.0f}</b></div>
-      <div><span>成交额</span><b>{m['dollar_adv']:,.0f}</b></div>
-      <div><span>走簿冲击</span><b>{m['walk_shortfall_bps']:.2f}bp</b></div>
-      <div><span>AC 成本</span><b>{m['ac_cost_bps']:.2f}bp</b></div>
-      <div><span>AC 风险</span><b>{m['ac_std_bps']:.2f}bp</b></div>
-    </div>
-  </section>
+<header>
+  <h1>◆ KAIROS LAB · 研究看板</h1>
+  <label class="ctl">标的 <select id="sym">{options}</select></label>
+  <label class="ctl">参与率
+    <input id="q" type="range" min="1" max="20" step="1" value="2">
+    <b id="q-label">2%</b></label>
+  <label class="ctl">风险厌恶 λ
+    <input id="lam" type="range" min="0" max="400" step="5" value="25">
+    <b id="lam-label">25</b></label>
+</header>
+<main>{''.join(sections)}</main>
+<script>
+const DATA = {json.dumps(payload, ensure_ascii=False)};
+const $ = (s) => document.querySelector(s);
+let active = Object.keys(DATA)[0];
 
-  <section class="wide"><h2>波动率曲面（ATM 锚定真实已实现波动率）</h2>
-    {_svg_smiles(surface)}
-    <p class="note">无套利体检：
-      <span class="{'ok' if m['surface_arbitrage_free'] else 'bad'}">
-      {'通过' if m['surface_arbitrage_free'] else '未通过'}</span>
-      （蝶式 g(k)≥0，日历总方差单调；校验范围 k∈[-0.6, 0.6] 即报价区间，
-      区间外为 SVI 外推）</p>
-  </section>
+function applyParticipation() {{
+  const q = Number($('#q').value) / 100;
+  $('#q-label').textContent = (q * 100).toFixed(0) + '%';
+  const d = DATA[active];
+  const cost = (d.eta * q + 0.5 * d.gamma * q * q) * 1e4;
+  const risk = d.sigma_daily * Math.sqrt(1 / 3) * q * 1e4;
+  const panel = document.querySelector(`section.panel[data-symbol="${{active}}"]`);
+  panel.querySelector('#kpi-cost').textContent = cost.toFixed(2) + 'bp';
+  panel.querySelector('#kpi-risk').textContent = risk.toFixed(2) + 'bp';
+  panel.querySelectorAll('tr[data-q]').forEach((tr) => {{
+    tr.classList.toggle('active', Math.abs(Number(tr.dataset.q) - q) < 0.005);
+  }});
+}}
 
-  <section class="wide"><h2>收益率曲线</h2>
-    {_svg_curve(curve)}
-    <p class="note">Nelson-Siegel RMSE {m['ns_rmse_bp']:.2f}bp ·
-      β0={m['ns_params']['beta0']:.4f} β1={m['ns_params']['beta1']:+.4f}</p>
-    {_table(curve_rows, ['期限(年)', '零息利率'])}
-  </section>
+function applyRisk() {{
+  const lam = Number($('#lam').value);
+  $('#lam-label').textContent = lam.toFixed(0);
+  const d = DATA[active];
+  let best = d.ac[0];
+  for (const point of d.ac) {{
+    if (Math.abs(point.lam - lam) < Math.abs(best.lam - lam)) best = point;
+  }}
+  const panel = document.querySelector(`section.panel[data-symbol="${{active}}"]`);
+  panel.querySelectorAll('g.ac').forEach((g) => {{
+    g.style.display = Number(g.dataset.lam) === Number(best.lam) ? 'inline' : 'none';
+  }});
+  panel.querySelector('#kpi-cost').textContent = best.cost_bps.toFixed(2) + 'bp';
+  panel.querySelector('#kpi-risk').textContent = best.std_bps.toFixed(2) + 'bp';
+}}
 
-  <section class="wide"><h2>订单簿与执行成本</h2>
-    {_svg_book(book)}
-    <p class="note">样本订单 {m['sample_qty']:,.0f} 股（约 2% ADV）走簿冲击
-      {m['walk_shortfall_bps']:.2f}bp</p>
-    {_table(cost_rows, ['参与率', '股数', '成本(bp)', '风险(bp)'])}
-  </section>
+function switchSymbol() {{
+  active = $('#sym').value;
+  document.querySelectorAll('section.panel').forEach((p) => {{
+    p.style.display = p.dataset.symbol === active ? 'block' : 'none';
+  }});
+  applyParticipation();
+  applyRisk();
+}}
 
-  <section><h2>校准参数</h2>{_table(calib_rows, ['指标', '数值'])}</section>
-  <section><h2>数据</h2>
-    <p class="note">{html.escape(m['data_path'])}</p>
-    <p class="note">日线 OHLCV 无法识别逐笔方向：Kyle λ 用带符号成交量代理，
-    η 由平方根律在参考参与率上锚定，γ 取 Kyle λ。详见 kairos-microstructure/calibrate.py。</p>
-  </section>
-  <section><h2>如何复现</h2>
-    <p class="note">python examples/run_dashboard.py --symbol sh600519</p>
-    <p class="note">全部数字来自本地 CSV，不联网；HTML 内联 SVG，可离线打开。</p>
-  </section>
-</main></body></html>"""
+$('#sym').addEventListener('change', switchSymbol);
+$('#q').addEventListener('input', applyParticipation);
+$('#lam').addEventListener('input', applyRisk);
+switchSymbol();
+</script>
+</body></html>"""
 
 
 __all__ = ["ATM_MULTIPLIERS", "CURVE_SHAPE", "MATURITIES", "default_data_path",

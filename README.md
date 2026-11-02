@@ -121,7 +121,7 @@ python examples/run_execution_demo.py --symbol sz000858 --side sell --algos twap
 python examples/run_dashboard.py --symbol sh600519
 python examples/run_dashboard.py --synthetic --out-dir /tmp/lab/dashboard   # 离线自检
 
-make test        # 32 个离线测试，数秒全绿
+make test        # 33 个离线测试，数秒全绿
 make demo        # 依次跑四条流水线
 ```
 
@@ -225,11 +225,16 @@ res["artifacts"]["report_md"]         # research/e2e_equity/REPORT.md
 | 收益率曲线 | `kairos-rates` bootstrap + Nelson-Siegel | 10Y 2.89%，NS RMSE 0.00bp |
 | 订单簿与执行成本 | `kairos-microstructure` 用真实 ADV/波动率校准 | 2% ADV 走簿 2.26bp；AC 成本 0.55bp / 风险 86.95bp |
 
+看板是**可交互**的：顶部可切换标的（支持多标的对比）、拖动「参与率」与「风险厌恶 λ」，
+KPI、成本表与 Almgren-Chriss 轨迹会实时更新；全部是内联 JS + SVG，无外部依赖、可离线打开。
+
 校准参数（全部来自这一份 CSV）：年化波动 26.4%、ADV 31,382 股、成交额 2.42 亿、
 Amihud 6.29e-11、Roll 价差 23.4bp、Kyle λ 1.09e-2、临时冲击 η 0.0263、永久冲击 γ 0.0109。
 
 > 诚实边界：日线 OHLCV 没有逐笔方向，Kyle λ 用带符号成交量代理，η 由平方根律在
-> 参考参与率上锚定。看板把假设写在页面上，不假装是结构估计。
+> 参考参与率上锚定。波动率优先用 OHLC 口径（Garman-Klass/Parkinson），价差用
+> Roll / Corwin-Schultz / Abdi-Ranaldo 交叉校验并标注来源。看板把假设写在页面上，
+> 不假装是结构估计。
 
 ## 项目结构
 
@@ -246,7 +251,7 @@ kairos-lab/
       execution_demo.py    run_execution_demo()       切片→撮合→TCA
       dashboard.py         run_dashboard()            真实数据→曲面/曲线/订单簿看板
   examples/                四个可直接运行的入口脚本（argparse，产物写 research/<name>/）
-  tests/                   32 个离线测试（含防未来函数、跨包一致性与看板产物验证）
+  tests/                   33 个离线测试（含防未来函数、跨包一致性与看板产物验证）
   research/                运行产物（已 gitignore）
 ```
 

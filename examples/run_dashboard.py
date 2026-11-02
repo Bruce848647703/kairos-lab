@@ -33,6 +33,7 @@ def _write_synthetic_csv(path: str, n: int = 600, seed: int = 7) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Kairos Lab 研究方向看板")
     parser.add_argument("--symbol", default="sh600519")
+    parser.add_argument("--symbols", default="", help="逗号分隔的多个标的，如 sh600519,sh600036")
     parser.add_argument("--data", default=None, help="OHLCV CSV 路径")
     parser.add_argument("--out-dir", default=os.path.join("research", "dashboard"))
     parser.add_argument("--synthetic", action="store_true", help="用离线合成数据自检")
@@ -48,9 +49,17 @@ def main() -> None:
         data_path = tmp.name
 
     try:
+        names = [s.strip() for s in args.symbols.split(",") if s.strip()]
         symbol = "SYNTH" if (args.synthetic and not args.data) else args.symbol
-        result = run_dashboard(symbol=symbol, data_path=data_path,
-                               out_dir=args.out_dir, quiet=args.quiet)
+        if names and data_path:
+            result = run_dashboard(symbols=names,
+                                   data_paths={n: data_path for n in names},
+                                   out_dir=args.out_dir, quiet=args.quiet)
+        elif names:
+            result = run_dashboard(symbols=names, out_dir=args.out_dir, quiet=args.quiet)
+        else:
+            result = run_dashboard(symbol=symbol, data_path=data_path,
+                                   out_dir=args.out_dir, quiet=args.quiet)
         print(f"OK  {summarize_dashboard(result)}")
     finally:
         if tmp is not None:

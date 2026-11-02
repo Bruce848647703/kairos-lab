@@ -55,13 +55,34 @@ def test_metrics_contract(dashboard):
     assert m["adv"] > 0
     assert len(m["surface_atm"]) == 5
     assert len(m["curve_zero"]) == len(m["curve_pillars"])
-    assert m["cost_curve"] and m["ac_cost_bps"] > 0
+    assert m["cost_curve"] and m["ac"] and m["ac"][0]["cost_bps"] > 0
+    assert m["sigma_intraday"] is not None or m["sigma_intraday"] is None
 
     with open(dashboard["metrics_json"], encoding="utf-8") as fh:
         loaded = json.load(fh)
-    assert loaded["symbol"] == "TEST"
+    assert loaded["TEST"]["symbol"] == "TEST"
 
 
 def test_summary(dashboard):
     text = summarize_dashboard(dashboard)
     assert "TEST" in text and "bp" in text
+
+
+def test_multi_symbol_and_interactive_controls(tmp_path):
+    paths = {}
+    for symbol in ("AAA", "BBB"):
+        csv_path = tmp_path / f"{symbol}.csv"
+        _write_csv(str(csv_path), seed=3 if symbol == "AAA" else 9)
+        paths[symbol] = str(csv_path)
+
+    result = run_dashboard(symbols=["AAA", "BBB"], data_paths=paths,
+                           out_dir=str(tmp_path / "multi"), quiet=True)
+    assert len(result["panels"]) == 2
+    text = open(result["html"], encoding="utf-8").read()
+    assert 'id="sym"' in text and 'id="q"' in text and 'id="lam"' in text
+    assert 'data-symbol="AAA"' in text and 'data-symbol="BBB"' in text
+    assert "<script>" in text
+
+    with open(result["metrics_json"], encoding="utf-8") as fh:
+        loaded = json.load(fh)
+    assert set(loaded) == {"AAA", "BBB"}
