@@ -45,6 +45,7 @@ def test_html_contains_three_panels(dashboard):
     assert "波动率曲面" in text
     assert "收益率曲线" in text
     assert "订单簿与执行成本" in text
+    assert "执行成本曲线" in text
     assert "<svg" in text and "http://" not in text.split("<style>")[0]
 
 

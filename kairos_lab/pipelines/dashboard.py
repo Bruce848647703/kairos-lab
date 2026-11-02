@@ -158,6 +158,39 @@ def _svg_book(book: Any, width: int = 560, height: int = 300) -> str:
             + "".join(parts) + "</svg>")
 
 
+def _svg_cost(points: Sequence[Dict[str, float]], reference: float = 0.0,
+              width: int = 560, height: int = 260) -> str:
+    left, right, top, bottom = 56, 16, 18, 34
+    xs = [p["pct"] * 100 for p in points]
+    book = [p["book_bps"] for p in points]
+    hi = max(max(book), reference) * 1.15 or 1.0
+    xmap = lambda v: _scale(v, min(xs), max(xs), left, width - right)
+    ymap = lambda v: _scale(v, 0.0, hi, height - bottom, top)
+    parts = []
+    for frac in (0.0, 0.5, 1.0):
+        y = top + frac * (height - top - bottom)
+        parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{width - right}" '
+                     f'y2="{y:.1f}" stroke="#2b3542" stroke-width="1"/>')
+        parts.append(f'<text x="{left - 6}" y="{y + 4:.1f}" fill="#8b93a1" '
+                     f'font-size="10" text-anchor="end">{hi * (1 - frac):.1f}</text>')
+    pts = [(xmap(x), ymap(v)) for x, v in zip(xs, book)]
+    parts.append(_polyline(pts, "#5dade2", 2.2))
+    for x, y in pts:
+        parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.6" fill="#5dade2"/>')
+    if reference > 0:
+        y_ref = ymap(reference)
+        parts.append(f'<line x1="{left}" y1="{y_ref:.1f}" x2="{width - right}" '
+                     f'y2="{y_ref:.1f}" stroke="#f0b90b" stroke-dasharray="5 3" stroke-width="1.4"/>')
+        parts.append(f'<text x="{width - right}" y="{y_ref - 5:.1f}" fill="#f0b90b" '
+                     f'font-size="10" text-anchor="end">AC 模型 @2% = {reference:.2f}bp</text>')
+    for x in (1, 2, 5, 10):
+        parts.append(f'<text x="{xmap(x):.1f}" y="{height - 12}" fill="#8b93a1" '
+                     f'font-size="10" text-anchor="middle">{x}%</text>')
+    parts.append(f'<text x="{left}" y="10" fill="#5dade2" font-size="10">逐档走簿冲击</text>')
+    return (f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}">'
+            + "".join(parts) + "</svg>")
+
+
 def _table(rows: Sequence[Sequence[Any]], headers: Sequence[str]) -> str:
     head = "".join(f"<th>{html.escape(str(h))}</th>" for h in headers)
     body = "".join(
@@ -223,11 +256,23 @@ def _symbol_payload(symbol: str, data_path: str) -> Dict[str, Any]:
     ns, ns_rmse = kr.fit_nelson_siegel(
         np.array(curve.pillars), np.asarray(curve.zero(curve.pillars)))
 
-    level_size = max(calib.adv * 0.005, 1.0)
+    level_size = max(calib.adv * 0.01, 1.0)   # 1% ADV/档，与 η 的量级对齐
     sample_qty = max(calib.adv * 0.02, 100.0)
     tick = max(round(last_price * 1e-4, 2), 0.01)
     book = km.build_book(mid=last_price, tick=tick, levels=20, level_size=level_size)
     walk = km.walk_book(book, "buy", sample_qty)
+
+    cost_points = []
+    for pct in (0.001, 0.005, 0.01, 0.02, 0.05, 0.10):
+        qty = max(calib.adv * pct, 1.0)
+        fresh = km.build_book(mid=last_price, tick=tick, levels=20,
+                              level_size=level_size)
+        walked = km.walk_book(fresh, "buy", qty)
+        cost_points.append({
+            "pct": pct,
+            "book_bps": walked["shortfall_bps"],
+            "model_bps": (calib.eta * pct + 0.5 * calib.gamma * pct * pct) * 1e4,
+        })
 
     schedules = [
         km.almgren_chriss(sample_qty, 1.0, 10, sigma=calib.sigma_daily,
@@ -261,6 +306,7 @@ def _symbol_payload(symbol: str, data_path: str) -> Dict[str, Any]:
         "sample_qty": sample_qty,
         "walk_shortfall_bps": walk["shortfall_bps"],
         "cost_curve": km.cost_curve(calib, horizon=1.0),
+        "book_cost_curve": cost_points,
         "ac": [{"lam": sch.risk_aversion, "cost_bps": sch.cost_bps,
                 "std_bps": sch.std_bps} for sch in schedules],
     }
@@ -271,6 +317,8 @@ def _symbol_payload(symbol: str, data_path: str) -> Dict[str, Any]:
         "curve_svg": _svg_curve(curve),
         "book_svg": _svg_book(book),
         "ac_svg": _svg_ac(schedules),
+        "cost_svg": _svg_cost(cost_points, reference=next(
+            (p["model_bps"] for p in cost_points if abs(p["pct"] - 0.02) < 1e-9), 0.0)),
     }
 
 
@@ -437,6 +485,13 @@ def _render_html(panels: Sequence[Dict[str, Any]]) -> str:
         {m['walk_shortfall_bps']:.2f}bp</p>
       <table><thead><tr><th>参与率</th><th>股数</th><th>成本(bp)</th><th>风险(bp)</th>
       </tr></thead><tbody>{cost_rows}</tbody></table>
+    </div>
+
+    <div class="wide"><h2>执行成本曲线（逐档走簿）</h2>
+      {panel['cost_svg']}
+      <p class="note">横轴为订单占 ADV 的比例，蓝线是合成盘口上逐档走簿的实测冲击
+      （含最小价差地板）；虚线是 AC 模型在 2% ADV 的估计，仅作量级参考 ——
+      走簿有固定价差、模型没有，两者不会在整个区间重合。</p>
     </div>
 
     <div class="wide"><h2>Almgren-Chriss 轨迹（拖动风险厌恶）</h2>
