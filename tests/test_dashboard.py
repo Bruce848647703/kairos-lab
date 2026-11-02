@@ -35,7 +35,7 @@ def dashboard(tmp_path_factory):
 
 
 def test_outputs_exist(dashboard):
-    for key in ("html", "report", "metrics_json"):
+    for key in ("html", "report", "metrics_json", "world_json"):
         assert os.path.isfile(dashboard[key])
     assert os.path.getsize(dashboard["html"]) > 2000
 
@@ -62,6 +62,15 @@ def test_metrics_contract(dashboard):
     with open(dashboard["metrics_json"], encoding="utf-8") as fh:
         loaded = json.load(fh)
     assert loaded["TEST"]["symbol"] == "TEST"
+
+
+def test_world_json_contract(dashboard):
+    with open(dashboard["world_json"], encoding="utf-8") as fh:
+        world = json.load(fh)
+    assert "TEST" in world
+    entry = world["TEST"]
+    assert {"symbol", "sigma", "last_price", "adv"} <= set(entry)
+    assert entry["sigma"] > 0 and entry["last_price"] > 0
 
 
 def test_summary(dashboard):

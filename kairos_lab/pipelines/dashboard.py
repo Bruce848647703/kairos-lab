@@ -346,6 +346,13 @@ def run_dashboard(
                             _render_markdown(panels))
     json_path = rp.write_json(os.path.join(out_dir, "metrics.json"),
                               {p["symbol"]: p["metrics"] for p in panels})
+    world_path = rp.write_json(os.path.join(out_dir, "world.json"), {
+        p["symbol"]: {
+            "symbol": p["symbol"],
+            "sigma": p["metrics"]["sigma_annual"],
+            "last_price": p["metrics"]["last_price"],
+            "adv": p["metrics"]["adv"],
+        } for p in panels})
 
     if not quiet:
         for panel in panels:
@@ -356,7 +363,8 @@ def run_dashboard(
         print(f"  产物: {html_path}")
 
     return {"html": html_path, "report": md_path, "metrics_json": json_path,
-            "panels": panels, "metrics": panels[0]["metrics"]}
+            "world_json": world_path, "panels": panels,
+            "metrics": panels[0]["metrics"]}
 
 
 def summarize(result: Dict[str, Any]) -> str:
