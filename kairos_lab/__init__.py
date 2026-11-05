@@ -31,7 +31,7 @@ from ._bootstrap import (
 
 ensure_paths()
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "SIBLINGS", "ENV_ROOT", "ensure_paths", "require", "kairos_root", "repo_root",

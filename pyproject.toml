@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kairos-lab"
-version = "0.1.0"
+version = "0.1.1"
 description = "Kairos Lab —— Kairos 量化套件的 capstone：用真实数据把 data/factor/portfolio/backtest/risk/execution/ml 串成端到端研究流水线（因子研究 → 组合优化 → 回测 → 风险 → 执行 TCA）"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -37,6 +37,11 @@ dependencies = [
     "kairos-rates @ git+https://github.com/Bruce848647703/kairos-rates@main",
     "kairos-microstructure @ git+https://github.com/Bruce848647703/kairos-microstructure@main",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Bruce848647703/kairos-lab"
+Source = "https://github.com/Bruce848647703/kairos-lab"
+Issues = "https://github.com/Bruce848647703/kairos-lab/issues"
 
 [project.optional-dependencies]
 # long-only / bounds 约束优化（min_variance / mean_variance / max_sharpe 的 SLSQP 路径）

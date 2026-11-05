@@ -14,9 +14,8 @@
 from __future__ import annotations
 
 import html
-import math
 import os
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence
 
 import numpy as np
 
